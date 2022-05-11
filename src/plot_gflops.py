@@ -5,7 +5,7 @@ def solve(filename):
     f = open(filename)
     sizes = []
     times = []
-    title = 'MY_MMult_4x4_8'
+    title = 'MY_MMult'
     while True:
         line = f.readline()
         if line:

@@ -4,7 +4,7 @@
 #include <iostream>
 #include "MMult0.h"
 //#include "MMult_4x4_13.h"
-#include "mmult_6.h"
+#include "mmult_8.h"
 
 #include "dclock.h"
 using namespace std;
@@ -45,8 +45,8 @@ float compare_matrices( int m, int n, float *a, int lda, float *b, int ldb )
         
         max_diff = max(diff, max_diff);
 
-        if(max_diff > 0.5f || max_diff < -0.5f) {
-            printf("\n error: i %d  j %d diff %f", i, j, max_diff);
+        if(diff > 0.5f || diff < -0.5f) {
+            printf("\n error: i %d  j %d diff %f", i, j, diff);
         }
     }
   }
