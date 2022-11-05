@@ -550,8 +550,14 @@ void PackMatrixB( int K, float *b, int ldb, float *b_to)
 
 void InnerKernel( int M, int N, int K, float *a, float *b, float *c, int ldc )
 {
-	for(int j=0;j<N;j+=stride)
+	for(int j=0;j<N;j+=stride){
+		int prefetch_idx=j+stride*2;
+		if(prefetch_idx<N){
+			for(int i=0; i<stride; i++)
+				_mm_prefetch(&C(i,prefetch_idx), _MM_HINT_T0);
+		}
 		AddDot(K, a, b+j*K, &C(0,j), ldc);
+	}
 }
 void gepb( int M, int N, int K, float *a, float *b, int ldb, float *c, int ldc ){
 	float* buf_b = (float*)aligned_alloc(256/8, N*K*sizeof(float));
