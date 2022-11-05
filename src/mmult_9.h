@@ -71,28 +71,28 @@ void InnerKernel( int M, int N, int K, float *a, float *b, float *c, int ldc )
 		AddDot(K, a, b+j*K, &C(0,j), ldc);
 	}
 }
-void gepb( int M, int N, int K, float *a, float *b, int ldb, float *c, int ldc ){
-	float* buf_b = (float*)aligned_alloc(256/8, N*K*sizeof(float));
+void gepb( int M, int N, int K, float *a, float *b, int ldb, float *c, int ldc, float *pack_b){
 	for(int j=0;j<N;j+=stride)
-		PackMatrixB(K, &B(0,j), ldb, buf_b+j*K);
+		PackMatrixB(K, &B(0,j), ldb, pack_b+j*K);
 	for(int i=0;i<M;i+=stride)
-		InnerKernel(stride, N, K, a+i*K, buf_b, &C(i,0), ldc);
-	free(buf_b);
+		InnerKernel(stride, N, K, a+i*K, pack_b, &C(i,0), ldc);
 }
 
-void gepp( int M, int N, int K, float *a, int lda, float *b, int ldb, float *c, int ldc ){
-	float* buf_a = (float*)aligned_alloc(256/8, M*K*sizeof(float));
+void gepp(int M, int N, int K, float *a, int lda, float *b, int ldb, float *c, int ldc, float *pack_a, float *pack_b){
 	for(int i=0;i<M;i+=stride)
-		PackMatrixA(K, &A(i,0), lda, buf_a+i*K);
+		PackMatrixA(K, &A(i,0), lda, pack_a+i*K);
 	for(int j=0;j<N;j+=block)
-		gepb(M, min(block,N-j), K, buf_a, &B(0,j), ldb, &C(0,j), ldc);
-	free(buf_a);
+		gepb(M, min(block,N-j), K, pack_a, &B(0,j), ldb, &C(0,j), ldc, pack_b);
 }
 
-void MY_MMult( int M, int N, int K, float *a, int lda, float *b, int ldb, float *c, int ldc )
+void MY_MMult(int M, int N, int K, float *a, int lda, float *b, int ldb, float *c, int ldc)
 {
+	float* pack_a = (float*)aligned_alloc(256/8, M*block*sizeof(float));
+	float* pack_b = (float*)aligned_alloc(256/8, block*block*sizeof(float));
 	for(int k=0;k<K;k+=block)
-		gepp(M, N, min(block,K-k), &A(0,k), lda, &B(k,0), ldb, &C(0,0), ldc);
+		gepp(M, N, min(block,K-k), &A(0,k), lda, &B(k,0), ldb, &C(0,0), ldc, pack_a, pack_b);
+	free(pack_a);
+	free(pack_b);
 }
 
 
