@@ -15,9 +15,9 @@ sse fp32 perf: 35.3735 gflops.
 sse fp64 perf: 17.3450 gflops.
 ```
 
-实验结果如下，其中 mmult_1-mmult_8 为参考 [how-to-optimize-gemm](https://github.com/BBuf/how-to-optimize-gemm)  重新编写的代码，mmult_9 为参考 goto paper 编写的代码
+实验结果如下，其中 mmult_1-mmult_8 为参考 [how-to-optimize-gemm](https://github.com/BBuf/how-to-optimize-gemm)  重新编写的代码，mmult_9 和 mmult_10 为参考 goto paper 编写的代码
 
-<img src="https://gitlab.com/jxm2001/picture/-/raw/main/pictures/2022/11/5_10_57_4_202211051057726.png" alt="MY_MMult_res" style="zoom: 33%;" />
+<img src="https://gitlab.com/jxm2001/picture/-/raw/main/pictures/2022/11/6_13_4_54_202211061304796.png" alt="MY_MMult_res" style="zoom: 33%;" />
 
 ### mmult_1
 
@@ -491,14 +491,18 @@ void MY_MMult( int M, int N, int K, float *a, int lda, float *b, int ldb, float 
 #include <pmmintrin.h>  // SSE2
 #include <emmintrin.h>  // SSE3
 #include <immintrin.h> //avx2
+
+const int nc = 384;
+const int kc = 384;
+const int mr = 4;
+const int nr = 16;
+const int regLen = 256/8/sizeof(float);
+
 typedef union
 {
   __m256 v;
-  float d[8];
+  float d[regLen];
 } v2df_t;
-
-const int block = 256;
-const int stride = 8;
 
 #define A( i, j ) a[ (i)*lda + (j) ]
 #define B( i, j ) b[ (i)*ldb + (j) ]
@@ -507,80 +511,194 @@ const int stride = 8;
 
 void AddDot( int K, float *a, float *b, float *c, int ldc )
 {
-	v2df_t reg_a[stride],reg_b,reg_c[stride];
-	for(int i=0; i<stride; i++)
-		for(int j=0; j<stride; j++)
-			reg_c[i].d[j]=C(i,j);
+	v2df_t reg_a[mr],reg_b[nr/regLen],reg_c[mr][nr/regLen];
+	for(int i=0; i<mr; i++)
+		for(int j=0; j<nr/regLen; j++)
+			for(int j2=0; j2<regLen; j2++)
+				reg_c[i][j].d[j2]=C(i,j*regLen+j2);
 	for(int k=0; k<K; k++){
-		reg_b.v = _mm256_load_ps(b);
-		for(int i=0; i<stride; i++){
+		for(int j=0; j<nr/regLen; j++)
+			reg_b[j].v = _mm256_load_ps(b+j*regLen);
+		for(int i=0; i<mr; i++){
 			reg_a[i].v = _mm256_set1_ps(a[i]);
-			reg_c[i].v += reg_a[i].v * reg_b.v;
+			for(int j=0; j<nr/regLen; j++)
+				reg_c[i][j].v += reg_a[i].v * reg_b[j].v;
 		}
-		a+=stride;
-		b+=stride;
+		a+=mr;
+		b+=nr;
 	}
-	for(int i=0; i<stride; i++)
-		for(int j=0; j<stride; j++)
-			C(i,j)=reg_c[i].d[j];	
+	for(int i=0; i<mr; i++)
+		for(int j=0; j<nr/regLen; j++)
+			for(int j2=0; j2<regLen; j2++)
+				C(i,j*regLen+j2)=reg_c[i][j].d[j2];
 }
 
 void PackMatrixA( int K, float *a, int lda, float * a_to)
 {
-	float buf_a[stride*stride];
-	for(int k=0;k<K;k+=stride){
-		for(int i=0;i<stride;i++)
-			for(int k2=0;k2<stride;k2++)
-				buf_a[i*stride+k2] = A(i,k+k2);
-		for(int k2=0;k2<stride;k2++)
-			for(int i=0;i<stride;i++)
-				a_to[k2*stride+i] = buf_a[i*stride+k2];
-		a_to+=stride*stride;
+	float buf_a[mr*mr];
+	for(int k=0;k<K;k+=mr){
+		for(int i=0;i<mr;i++)
+			for(int k2=0;k2<mr;k2++)
+				buf_a[i*mr+k2] = A(i,k+k2);
+		for(int k2=0;k2<mr;k2++)
+			for(int i=0;i<mr;i++)
+				a_to[k2*mr+i] = buf_a[i*mr+k2];
+		a_to+=mr*mr;
 	}
 }
 
 void PackMatrixB( int K, float *b, int ldb, float *b_to)
 {
 	for(int k=0;k<K;k++){
-		for(int j=0;j<stride;j++)
+		for(int j=0;j<nr;j++)
 			b_to[j] = B(k,j);
-		b_to+=stride;
+		b_to+=nr;
 	}
 }
 
 void InnerKernel( int M, int N, int K, float *a, float *b, float *c, int ldc )
 {
-	for(int j=0;j<N;j+=stride){
-		int prefetch_idx=j+stride*2;
+	for(int j=0;j<N;j+=nr){
+		int prefetch_idx=j+nr*2;
 		if(prefetch_idx<N){
-			for(int i=0; i<stride; i++)
+			for(int i=0; i<nr; i++)
 				_mm_prefetch(&C(i,prefetch_idx), _MM_HINT_T0);
 		}
 		AddDot(K, a, b+j*K, &C(0,j), ldc);
 	}
 }
 void gepb( int M, int N, int K, float *a, float *b, int ldb, float *c, int ldc, float *pack_b){
-	for(int j=0;j<N;j+=stride)
+	for(int j=0;j<N;j+=nr)
 		PackMatrixB(K, &B(0,j), ldb, pack_b+j*K);
-	for(int i=0;i<M;i+=stride)
-		InnerKernel(stride, N, K, a+i*K, pack_b, &C(i,0), ldc);
+	for(int i=0;i<M;i+=mr)
+		InnerKernel(mr, N, K, a+i*K, pack_b, &C(i,0), ldc);
 }
 
 void gepp(int M, int N, int K, float *a, int lda, float *b, int ldb, float *c, int ldc, float *pack_a, float *pack_b){
-	for(int i=0;i<M;i+=stride)
+	for(int i=0;i<M;i+=mr)
 		PackMatrixA(K, &A(i,0), lda, pack_a+i*K);
-	for(int j=0;j<N;j+=block)
-		gepb(M, min(block,N-j), K, pack_a, &B(0,j), ldb, &C(0,j), ldc, pack_b);
+	for(int j=0;j<N;j+=nc)
+		gepb(M, min(nc,N-j), K, pack_a, &B(0,j), ldb, &C(0,j), ldc, pack_b);
 }
 
 void MY_MMult(int M, int N, int K, float *a, int lda, float *b, int ldb, float *c, int ldc)
 {
-	float* pack_a = (float*)aligned_alloc(256/8, M*block*sizeof(float));
-	float* pack_b = (float*)aligned_alloc(256/8, block*block*sizeof(float));
-	for(int k=0;k<K;k+=block)
-		gepp(M, N, min(block,K-k), &A(0,k), lda, &B(k,0), ldb, &C(0,0), ldc, pack_a, pack_b);
+	float* pack_a = (float*)aligned_alloc(regLen*sizeof(float), M*kc*sizeof(float));
+	float* pack_b = (float*)aligned_alloc(regLen*sizeof(float), kc*nc*sizeof(float));
+	for(int k=0;k<K;k+=kc)
+		gepp(M, N, min(kc,K-k), &A(0,k), lda, &B(k,0), ldb, &C(0,0), ldc, pack_a, pack_b);
 	free(pack_a);
 	free(pack_b);
 }
 ```
 
+### mmult_10
+
+参考 goto paper 实现
+
+```c++
+#include <mmintrin.h>
+#include <xmmintrin.h>  // SSE
+#include <pmmintrin.h>  // SSE2
+#include <emmintrin.h>  // SSE3
+#include <immintrin.h> //avx2
+
+const int nc = 384;
+const int kc = 384;
+const int mr = 4;
+const int nr = 32;
+const int regLen = 512/8/sizeof(float);
+
+typedef union
+{
+  __m512 v;
+  float d[regLen];
+} v2df_t;
+
+#define A( i, j ) a[ (i)*lda + (j) ]
+#define B( i, j ) b[ (i)*ldb + (j) ]
+#define C( i, j ) c[ (i)*ldc + (j) ]
+#define min(i, j) ((i) < (j) ? (i): (j))
+
+void AddDot( int K, float *a, float *b, float *c, int ldc )
+{
+	v2df_t reg_a[mr],reg_b[nr/regLen],reg_c[mr][nr/regLen];
+	for(int i=0; i<mr; i++)
+		for(int j=0; j<nr/regLen; j++)
+			for(int j2=0; j2<regLen; j2++)
+				reg_c[i][j].d[j2]=C(i,j*regLen+j2);
+	for(int k=0; k<K; k++){
+		for(int j=0; j<nr/regLen; j++)
+			reg_b[j].v = _mm512_load_ps(b+j*regLen);
+		for(int i=0; i<mr; i++){
+			reg_a[i].v = _mm512_set1_ps(a[i]);
+			for(int j=0; j<nr/regLen; j++)
+				reg_c[i][j].v += reg_a[i].v * reg_b[j].v;
+		}
+		a+=mr;
+		b+=nr;
+	}
+	for(int i=0; i<mr; i++)
+		for(int j=0; j<nr/regLen; j++)
+			for(int j2=0; j2<regLen; j2++)
+				C(i,j*regLen+j2)=reg_c[i][j].d[j2];
+}
+
+void PackMatrixA( int K, float *a, int lda, float * a_to)
+{
+	float buf_a[mr*mr];
+	for(int k=0;k<K;k+=mr){
+		for(int i=0;i<mr;i++)
+			for(int k2=0;k2<mr;k2++)
+				buf_a[i*mr+k2] = A(i,k+k2);
+		for(int k2=0;k2<mr;k2++)
+			for(int i=0;i<mr;i++)
+				a_to[k2*mr+i] = buf_a[i*mr+k2];
+		a_to+=mr*mr;
+	}
+}
+
+void PackMatrixB( int K, float *b, int ldb, float *b_to)
+{
+	for(int k=0;k<K;k++){
+		for(int j=0;j<nr;j++)
+			b_to[j] = B(k,j);
+		b_to+=nr;
+	}
+}
+
+void InnerKernel( int M, int N, int K, float *a, float *b, float *c, int ldc )
+{
+	for(int j=0;j<N;j+=nr){
+		int prefetch_idx=j+nr*2;
+		if(prefetch_idx<N){
+			for(int i=0; i<nr; i++)
+				_mm_prefetch(&C(i,prefetch_idx), _MM_HINT_T0);
+		}
+		AddDot(K, a, b+j*K, &C(0,j), ldc);
+	}
+}
+void gepb( int M, int N, int K, float *a, float *b, int ldb, float *c, int ldc, float *pack_b){
+	for(int j=0;j<N;j+=nr)
+		PackMatrixB(K, &B(0,j), ldb, pack_b+j*K);
+	for(int i=0;i<M;i+=mr)
+		InnerKernel(mr, N, K, a+i*K, pack_b, &C(i,0), ldc);
+}
+
+void gepp(int M, int N, int K, float *a, int lda, float *b, int ldb, float *c, int ldc, float *pack_a, float *pack_b){
+	for(int i=0;i<M;i+=mr)
+		PackMatrixA(K, &A(i,0), lda, pack_a+i*K);
+	for(int j=0;j<N;j+=nc)
+		gepb(M, min(nc,N-j), K, pack_a, &B(0,j), ldb, &C(0,j), ldc, pack_b);
+}
+
+void MY_MMult(int M, int N, int K, float *a, int lda, float *b, int ldb, float *c, int ldc)
+{
+	float* pack_a = (float*)aligned_alloc(regLen*sizeof(float), M*kc*sizeof(float));
+	float* pack_b = (float*)aligned_alloc(regLen*sizeof(float), kc*nc*sizeof(float));
+	for(int k=0;k<K;k+=kc)
+		gepp(M, N, min(kc,K-k), &A(0,k), lda, &B(k,0), ldb, &C(0,0), ldc, pack_a, pack_b);
+	free(pack_a);
+	free(pack_b);
+}
+```

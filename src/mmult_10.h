@@ -103,4 +103,3 @@ void MY_MMult(int M, int N, int K, float *a, int lda, float *b, int ldb, float *
 	free(pack_b);
 }
 
-
