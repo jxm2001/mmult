@@ -16,7 +16,7 @@ OBJ_C := $(patsubst %.c, %.o, $(C_SOURCE))
 
 DEFINE_MACRO := 
 
-CPPFLAGS := -Wall -fpermissive -O3  -std=c++11 -mavx -mfma 
+CPPFLAGS := -Wall -fpermissive -O3  -std=c++11 -mavx -mfma -mavx512f
 CPPFLAGS += $(DEP_INC_DIR) $(DEFINE_MACRO) 
 CFLAGS += $(DEP_INC_DIR) $(DEFINE_MACRO) 
 

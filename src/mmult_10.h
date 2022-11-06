@@ -7,12 +7,12 @@
 const int nc = 384;
 const int kc = 384;
 const int mr = 4;
-const int nr = 16;
-const int regLen = 256/8/sizeof(float);
+const int nr = 32;
+const int regLen = 512/8/sizeof(float);
 
 typedef union
 {
-  __m256 v;
+  __m512 v;
   float d[regLen];
 } v2df_t;
 
@@ -30,9 +30,9 @@ void AddDot( int K, float *a, float *b, float *c, int ldc )
 				reg_c[i][j].d[j2]=C(i,j*regLen+j2);
 	for(int k=0; k<K; k++){
 		for(int j=0; j<nr/regLen; j++)
-			reg_b[j].v = _mm256_load_ps(b+j*regLen);
+			reg_b[j].v = _mm512_load_ps(b+j*regLen);
 		for(int i=0; i<mr; i++){
-			reg_a[i].v = _mm256_set1_ps(a[i]);
+			reg_a[i].v = _mm512_set1_ps(a[i]);
 			for(int j=0; j<nr/regLen; j++)
 				reg_c[i][j].v += reg_a[i].v * reg_b[j].v;
 		}

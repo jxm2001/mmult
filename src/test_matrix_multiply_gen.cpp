@@ -55,7 +55,7 @@ double time_tmp, time_sum, gflops, diff;
 
 float *a, *b, *c, *prec, *nowc;    
 
-const int test_size[]={120,360,720,1000,1200,1600,2000};
+const int test_size[]={128,256,512,1024,1536,2048};
 
 int main(){
 
