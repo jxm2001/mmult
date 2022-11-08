@@ -17,7 +17,7 @@ sse fp64 perf: 17.3450 gflops.
 
 实验结果如下，其中 mmult_1-mmult_8 为参考 [how-to-optimize-gemm](https://github.com/BBuf/how-to-optimize-gemm)  重新编写的代码，mmult_9 和 mmult_10 为参考 goto paper 编写的代码
 
-<img src="https://gitlab.com/jxm2001/picture/-/raw/main/pictures/2022/11/6_13_4_54_202211061304796.png" alt="MY_MMult_res" style="zoom: 33%;" />
+<img src="https://gitlab.com/jxm2001/picture/-/raw/main/pictures/2022/11/8_23_33_54_202211082333275.png" alt="MY_MMult_res" style="zoom: 33%;" />
 
 ### mmult_1
 

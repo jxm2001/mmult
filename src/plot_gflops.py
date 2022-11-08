@@ -19,7 +19,7 @@ def solve(filename):
     return title, sizes, times
 
 if __name__ == '__main__':
-    my_res = ['mmult_1','mmult_2','mmult_3','mmult_4','mmult_5','mmult_6', 'mmult_7', 'mmult_8', 'mmult_9', 'mmult_10']
+    my_res = ['mmult_1','mmult_2','mmult_3','mmult_4','mmult_5','mmult_6', 'mmult_7', 'mmult_8', 'mmult_9', 'mmult_10', 'mkl']
     plt.xlabel('size')
     plt.ylabel('gflops')
     plt.subplots_adjust(right=0.7)
